@@ -316,7 +316,7 @@ function initialize(canvasName) {
     gl.shaderSource(vertShader, vertCode);
     gl.compileShader(vertShader);
 
-    var fragCode = "void main(void) {" + "gl_FragColor = vec4(255.0, 255.0, 255.0, 1.0);" + "}";
+    var fragCode = "void main(void) {" + "gl_FragColor = vec4(0.0, 255.0, 0.0, 1.0);" + "}";
     var fragShader = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fragShader, fragCode);
     gl.compileShader(fragShader);
