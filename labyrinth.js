@@ -1,14 +1,14 @@
+'use strict';
 var vertices = [];
 var indices = [];
 var indicesArrIndex = 0;
-var cubeLengthInPixel = 10;
-var cubeLengthH = 10;
-var cubeLengthV = 10;
+var blockLengthInPixel = 15;
+var blockLengthH;
+var blockLengthV;
 var width, height;
-var occupiedBlocks = [];
-var restrictedBlocks = [];
-var cubeCountH;
-var cubeCountV;
+var occupiedBlockIDs = [];
+var blockCountH;
+var blockCountV;
 
 var Directions = Object.freeze({
     NORTH : 0,
@@ -17,64 +17,86 @@ var Directions = Object.freeze({
     WEST : 3
 });
 
+function BlockIndices(nwIndex, neIndex, seIndex, swIndex) {
+    this.nwIndex = nwIndex;
+    this.neIndex = neIndex;
+    this.seIndex = seIndex;
+    this.swIndex = swIndex;
+}
+
+function Block(blockIndices, blockID, parentBlock, fromDirection) {
+    this.blockIndices = blockIndices;
+    this.blockID = blockID;
+    this.parentBlock = parentBlock;
+    this.directionsToTravel = [];
+    for (var directionEnum in Directions) {
+        var directionKey = parseInt(Directions[directionEnum]);
+        if (!equalDirections(directionKey, fromDirection)) {
+            this.directionsToTravel.push(directionKey);
+        }
+    }
+}
+
+Block.prototype.getDirectionToTravel = function() {
+    if (this.directionsToTravel.length == 1) {
+        return this.directionsToTravel.pop();
+    }
+    var index = Math.floor(Math.random() * this.directionsToTravel.length);
+    var directionToTravel = this.directionsToTravel[index];
+    var directions = [];
+    for (var directionKeyString in this.directionsToTravel) {
+        var directionKey = parseInt(directionKeyString);
+        if (!equalDirections(directionKey, directionToTravel)) {
+            directions.push(directionKey);
+        }
+    }
+    this.directionsToTravel = directions;
+    return directionToTravel;
+};
+
+Block.prototype.freeUpMem = function() {
+    delete this.directionTravelled;
+    delete this.blockID;
+    delete this.blockIndices;
+}
+
+function BlockID(xCoord,yCoord) {
+    this.locH = xCoord;
+    this.locV = yCoord;
+}
+
 function run(canvasName) {
 
-    gl = initialize(canvasName);
+    var gl = initialize(canvasName);
     reconfigureAspect();
     start(gl);
 }
 
 function reconfigureAspect() {
-    cubeLengthH = (2 / width) * cubeLengthInPixel;
-    cubeLengthV = (2 / height) * cubeLengthInPixel;
+    blockLengthH = (2 / width) * blockLengthInPixel;
+    blockLengthV = (2 / height) * blockLengthInPixel;
 
-    cubeCountH = width / cubeLengthInPixel;
-    cubeCountV = height / cubeLengthInPixel;
+    blockCountH = width / blockLengthInPixel;
+    blockCountV = height / blockLengthInPixel;
+    // vertices = new Array(Math.round(blockCountH * blockCountV * 4));
+    // indices = new Array(Math.round(vertices.length / 2));
 }
 
-function pushCubeCoords(nwIndex, neIndex, seIndex, swIndex) {
-    indices.push(nwIndex, neIndex, seIndex);
-    console.log("indices:" + "(" + (nwIndex*2) + "," + neIndex + "," + seIndex + "," + swIndex + ")");
-    console.log("Triangle 1:NW:" + vertices[nwIndex * 2] + "," + vertices[nwIndex * 2 + 1] +
-                "|NE:" + vertices[neIndex * 2] + "," + vertices[neIndex * 2 + 1] + "|SE:" +
-                vertices[seIndex * 2] + "," + vertices[seIndex * 2 + 1] + "|SW:" +
-                vertices[swIndex * 2] + "," + vertices[swIndex * 2 + 1]);
-    indices.push(seIndex, swIndex, nwIndex);
-}
-
-function OccupiedBlock(xCoord,yCoord) {
-    this.locH = xCoord;
-    this.locV = yCoord;
-}
-
-function areEqualsOccupiedBlock(obj1, obj2) {
+function areSameOccupiedBlockIDs(obj1, obj2) {
     return obj1.locH == obj2.locH && obj1.locV == obj2.locV;
 }
 
-function contains(array, obj) {
-	for(index = 0; index < array.length; index++) {
-  	     var current = array[index];
-  	      if(areEqualsOccupiedBlock(current, obj))
-    	     return true;
-    }
-    return false;
+function equalDirections(obj1, obj2) {
+    return obj1 == obj2;
 }
 
-function numberOfOcccupiedNeighbors(occupiedBlocks, prospectiveBlock) {
-    neighborBlocks = [];
-    neighborBlocks.push(new OccupiedBlock(prospectiveBlock.locH - 1, prospectiveBlock.locV));
-    neighborBlocks.push(new OccupiedBlock(prospectiveBlock.locH, prospectiveBlock.locV + 1));
-    neighborBlocks.push(new OccupiedBlock(prospectiveBlock.locH + 1, prospectiveBlock.locV));
-    neighborBlocks.push(new OccupiedBlock(prospectiveBlock.locH, prospectiveBlock.locV - 1));
-    var counter = 0;
-
-    for (var i = 0; i < neighborBlocks.length && counter < 2; i++) {
-        var neighbor = neighborBlocks[i];
-        if (contains(occupiedBlocks, neighbor)) {
-            counter++;
-        }
+function contains(array, obj2, equalsFunc) {
+	for(var index = 0; index < array.length; index++) {
+        var obj1 = array[index];
+  	    if(equalsFunc(obj1, obj2))
+            return true;
     }
-    return counter;
+    return false;
 }
 
 function render(gl) {
@@ -85,142 +107,176 @@ function render(gl) {
 
 function start(gl) {
     /*start at bottom left (south west) corner*/
-    var indexH = -1;
-    var indexV = -1;
-    // var indexH = 0;
-    // var indexV = 0;
+    var indexH = -1 - blockLengthH;
+    var indexV = -1 + blockLengthV;
 
-    var nwCoordX = indexH;
-    var nwCoordY = indexV + cubeLengthV;
-    var swCoordX = indexH;
-    var swCoordY = indexV;
-    var neCoordX = indexH + cubeLengthH;
-    var neCoordY = indexV + cubeLengthV;
-    var seCoordX = indexH + cubeLengthH;
-    var seCoordY = indexV;
-    var nwIndex;
-    var neIndex;
-    var seIndex;
-    var swIndex;
+    var nwIndex = registerVertices(indexH, indexV + blockLengthV);
+    var neIndex = registerVertices(indexH + blockLengthH, indexV + blockLengthV);
+    var seIndex = registerVertices(indexH + blockLengthH, indexV);
+    var swIndex = registerVertices(indexH, indexV);
 
-    vertices.push(nwCoordX, nwCoordY);
-    nwIndex = indicesArrIndex++;
-    vertices.push(neCoordX, neCoordY);
-    neIndex = indicesArrIndex++;
-    vertices.push(seCoordX, seCoordY);
-    seIndex = indicesArrIndex++;
-    vertices.push(swCoordX, swCoordY);
-    swIndex = indicesArrIndex++;
-    pushCubeCoords(nwIndex, neIndex, seIndex, swIndex);
-    /*restrict to one block for now*/
-    var occupiedBlock = new OccupiedBlock(0, 0);
-    occupiedBlocks.push(occupiedBlock);
+    var directionToTravel = Directions.EAST;
+    var currentBlockIndices = new BlockIndices(nwIndex, neIndex, seIndex, swIndex);
+    var wallBlockIndices = breakWall(directionToTravel, currentBlockIndices);
 
+    var neighborBlockIndices = getNextBlockIndices(directionToTravel, wallBlockIndices);
+    var fromDirection = getDirectionWithRespectToNeighbor(directionToTravel);
+    var neighborBlockID = new BlockID(1,1);
+    occupiedBlockIDs.push(neighborBlockID);
+    var currentBlock = new Block(neighborBlockIndices, neighborBlockID, null, fromDirection);
+    visitBlock(currentBlock);
     render(gl);
+}
 
-    var latestCubeH = 0;
-    var latestCubeV = 0;
-    var newCubeH;
-    var newCubeV;
-    var attempts = 0;
-    while (true) {
-        var direction = Math.floor(Math.random() * 4);
-        switch (direction) {
-            case Directions.NORTH:
-                newCubeH = latestCubeH;
-                newCubeV = latestCubeV + 1;
-                break;
-            case Directions.EAST:
-                newCubeH = latestCubeH + 1;
-                newCubeV = latestCubeV;
-                break;
-            case Directions.SOUTH:
-                newCubeH = latestCubeH;
-                newCubeV = latestCubeV - 1;
-                break;
-            case Directions.WEST:
-                newCubeH = latestCubeH - 1;
-                newCubeV = latestCubeV;
-                break;
-        }
-        console.log("choice:" + direction);
-        prospectiveBlock = new OccupiedBlock(newCubeH, newCubeV);
-        if (newCubeV >= 0 && newCubeH >= 0 &&
-            newCubeV < cubeCountV && newCubeH < cubeCountH &&
-            !contains(occupiedBlocks, prospectiveBlock) &&
-            numberOfOcccupiedNeighbors(occupiedBlocks, prospectiveBlock) <= 1) {
-            console.log("used:" + direction);
-            console.log("before|NW:" + nwIndex + "|NE:" + neIndex + "|SE:" + seIndex + "|SW:" + swIndex);
-            switch (direction) {
-                case Directions.NORTH:
-                    seIndex = neIndex;
-                    swIndex = nwIndex;
-
-                    nwCoordX = vertices[nwIndex * 2];
-                    nwCoordY = vertices[(nwIndex * 2) + 1] + cubeLengthV;
-                    vertices.push(nwCoordX, nwCoordY);
-                    nwIndex = indicesArrIndex++;
-
-                    neCoordX = vertices[neIndex * 2];
-                    neCoordY = vertices[(neIndex * 2) + 1] + cubeLengthV;
-                    vertices.push(neCoordX, neCoordY);
-                    neIndex = indicesArrIndex++;
-                    break;
-                case Directions.EAST:
-                    nwIndex = neIndex;
-                    swIndex = seIndex;
-
-                    neCoordX = vertices[neIndex * 2] + cubeLengthH;
-                    neCoordY = vertices[(neIndex * 2) + 1];
-                    vertices.push(neCoordX, neCoordY);
-                    neIndex = indicesArrIndex++;
-
-                    seCoordX = vertices[seIndex * 2] + cubeLengthH;
-                    seCoordY = vertices[(seIndex * 2) + 1];
-                    vertices.push(seCoordX, seCoordY);
-                    seIndex = indicesArrIndex++;
-                    break;
-                case Directions.SOUTH:
-                    neIndex = seIndex;
-                    nwIndex = swIndex;
-
-                    swCoordX = vertices[swIndex * 2];
-                    swCoordY = vertices[(swIndex * 2) + 1] - cubeLengthV;
-                    vertices.push(swCoordX, swCoordY);
-                    swIndex = indicesArrIndex++;
-
-                    seCoordX = vertices[seIndex * 2];
-                    seCoordY = vertices[(seIndex * 2) + 1] - cubeLengthV;
-                    vertices.push(seCoordX, seCoordY);
-                    seIndex = indicesArrIndex++;
-                    break;
-                case Directions.WEST:
-                    neIndex = nwIndex;
-                    seIndex = swIndex;
-
-                    nwCoordX = vertices[nwIndex * 2] - cubeLengthH;
-                    nwCoordY = vertices[(nwIndex * 2) + 1];
-                    vertices.push(nwCoordX, nwCoordY);
-                    nwIndex = indicesArrIndex++;
-
-                    swCoordX = vertices[swIndex * 2] - cubeLengthH;
-                    swCoordY = vertices[(swIndex * 2) + 1];
-                    vertices.push(swCoordX, swCoordY);
-                    swIndex = indicesArrIndex++;
-                    break;
-            }
-            console.log("after|NW:" + nwIndex + "|NE:" + neIndex + "|SE:" + seIndex + "|SW:" + swIndex);
-            pushCubeCoords(nwIndex, neIndex, seIndex, swIndex);
-            latestCubeV = newCubeV;
-            latestCubeH = newCubeH;
-            occupiedBlocks.push(prospectiveBlock);
-            render(gl);
-        }
-        if (attempts == 38000) {
-            break;
-        }
-        attempts++;
+function visitBlock(currentBlock) {
+    if (currentBlock == null) {
+        return null;
     }
+    var neighborBlock = pickANeighbor(currentBlock);
+    if (neighborBlock != null) {
+        return visitBlock(neighborBlock);
+    }
+    currentBlock.freeUpMem();
+    return visitBlock(currentBlock.parentBlock);
+}
+
+function pickANeighbor(currentBlock) {
+    var neighborBlockID;
+    var directionToTravel;
+    console.log("1|" + currentBlock.blockID.locH + ":" + currentBlock.blockID.locV);
+    do {
+        if (currentBlock.directionsToTravel.length < 1) {
+            console.log("4|Done");
+            return null;
+        }
+        directionToTravel = currentBlock.getDirectionToTravel();
+        neighborBlockID = getNeighborBlockID(directionToTravel, currentBlock.blockID);
+        console.log("2.0|" + neighborBlockID.locH + ":" + neighborBlockID.locV);
+        console.log("2.1|" + (neighborBlockID.locH > 0 && neighborBlockID.locV > 0));
+        console.log("2.2|" + (neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH));
+        console.log("2.3|" + !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs));
+        console.log(occupiedBlockIDs)
+    } while (!canVisitNeighbor(neighborBlockID));
+    console.log("3|Moving");
+    var neighborBlock = null;
+    var wallBlockIndices = breakWall(directionToTravel, currentBlock.blockIndices);
+    var neighborBlockIndices = getNextBlockIndices(directionToTravel, wallBlockIndices);
+    var fromDirection = getDirectionWithRespectToNeighbor(directionToTravel);
+    occupiedBlockIDs.push(neighborBlockID);
+    return new Block(neighborBlockIndices, neighborBlockID, currentBlock, fromDirection);
+}
+
+function breakWall(directionToTravel, currentBlockIndices) {
+    return getNextBlockIndices(directionToTravel, currentBlockIndices);
+}
+
+function registerVertices(coordX, coordY) {
+    vertices.push(coordX, coordY);
+    return indicesArrIndex++;
+}
+
+function registerBlockIndices(blockIndices) {
+    indices.push(blockIndices.nwIndex, blockIndices.neIndex, blockIndices.seIndex);
+    indices.push(blockIndices.seIndex, blockIndices.swIndex, blockIndices.nwIndex);
+}
+
+function getNextBlockIndices(directionToTravel, currentBlockIndices, isForNeighbor) {
+    var nwIndex, neIndex, seIndex, swIndex, coordX, coordY;
+    switch (directionToTravel) {
+        case Directions.NORTH:
+            seIndex = currentBlockIndices.neIndex;
+            swIndex = currentBlockIndices.nwIndex;
+
+            coordX = vertices[currentBlockIndices.nwIndex * 2];
+            coordY = vertices[(currentBlockIndices.nwIndex * 2) + 1] + blockLengthV;
+            nwIndex = registerVertices(coordX, coordY);
+
+            coordX = vertices[currentBlockIndices.neIndex * 2];
+            coordY = vertices[(currentBlockIndices.neIndex * 2) + 1] + blockLengthV;
+            neIndex = registerVertices(coordX, coordY);
+            break;
+        case Directions.EAST:
+            nwIndex = currentBlockIndices.neIndex;
+            swIndex = currentBlockIndices.seIndex;
+
+            coordX = vertices[currentBlockIndices.neIndex * 2] + blockLengthH;
+            coordY = vertices[(currentBlockIndices.neIndex * 2) + 1];
+            neIndex = registerVertices(coordX, coordY);
+
+            coordX = vertices[currentBlockIndices.seIndex * 2] + blockLengthH;
+            coordY = vertices[(currentBlockIndices.seIndex * 2) + 1];
+            seIndex = registerVertices(coordX, coordY);
+            break;
+        case Directions.SOUTH:
+            neIndex = currentBlockIndices.seIndex;
+            nwIndex = currentBlockIndices.swIndex;
+
+            coordX = vertices[currentBlockIndices.swIndex * 2];
+            coordY = vertices[(currentBlockIndices.swIndex * 2) + 1] - blockLengthV;
+            swIndex = registerVertices(coordX, coordY);
+
+            coordX = vertices[currentBlockIndices.seIndex * 2];
+            coordY = vertices[(currentBlockIndices.seIndex * 2) + 1] - blockLengthV;
+            seIndex = registerVertices(coordX, coordY);
+            break;
+        case Directions.WEST:
+            neIndex = currentBlockIndices.nwIndex;
+            seIndex = currentBlockIndices.swIndex;
+
+            coordX = vertices[currentBlockIndices.nwIndex * 2] - blockLengthH;
+            coordY = vertices[(currentBlockIndices.nwIndex * 2) + 1];
+            nwIndex = registerVertices(coordX, coordY);
+
+            coordX = vertices[currentBlockIndices.swIndex * 2] - blockLengthH;
+            coordY = vertices[(currentBlockIndices.swIndex * 2) + 1];
+            swIndex = registerVertices(coordX, coordY);
+            break;
+    }
+    var blockIndices = new BlockIndices(nwIndex, neIndex, seIndex, swIndex);
+    registerBlockIndices(blockIndices);
+    return blockIndices;
+}
+
+function getNeighborBlockID(directionToTravel, currentBlockId) {
+    var newBlockH, newBlockV;
+    switch (directionToTravel) {
+        case Directions.NORTH:
+            newBlockH = currentBlockId.locH;
+            newBlockV = currentBlockId.locV + 2;
+            break;
+        case Directions.EAST:
+            newBlockH = currentBlockId.locH + 2;
+            newBlockV = currentBlockId.locV;
+            break;
+        case Directions.SOUTH:
+            newBlockH = currentBlockId.locH;
+            newBlockV = currentBlockId.locV - 2;
+            break;
+        case Directions.WEST:
+            newBlockH = currentBlockId.locH - 2;
+            newBlockV = currentBlockId.locV;
+            break;
+    }
+    return new BlockID(newBlockH, newBlockV);
+}
+
+function getDirectionWithRespectToNeighbor(directionToTravel) {
+    switch (directionToTravel) {
+        case Directions.NORTH:
+            return Directions.SOUTH;
+        case Directions.SOUTH:
+            return Directions.NORTH;
+        case Directions.EAST:
+            return Directions.WEST;
+        case Directions.WEST:
+            return Directions.EAST;
+    }
+}
+
+function canVisitNeighbor(neighborBlockID) {
+    return neighborBlockID.locH > 0 && neighborBlockID.locV > 0 &&
+        neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH
+        && !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs);
 }
 
 function initialize(canvasName) {
@@ -249,7 +305,7 @@ function initialize(canvasName) {
     gl.shaderSource(vertShader, vertCode);
     gl.compileShader(vertShader);
 
-    var fragCode = "void main(void) {" + "gl_FragColor = vec4(0.0, 255.0, 0.0, 1.0);" + "}";
+    var fragCode = "void main(void) {" + "gl_FragColor = vec4(255.0, 255.0, 255.0, 1.0);" + "}";
     var fragShader = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fragShader, fragCode);
     gl.compileShader(fragShader);
