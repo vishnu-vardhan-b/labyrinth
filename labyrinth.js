@@ -73,13 +73,24 @@ function run(canvasName) {
 }
 
 function reconfigureAspect() {
+    var maxBlockLengthInPixel = 20;
+    var minBlockLengthInPixel = 5;
+    var tempBlockLengthInPixel = minBlockLengthInPixel;
+    blockLengthInPixel = tempBlockLengthInPixel;
+    while (tempBlockLengthInPixel < maxBlockLengthInPixel) {
+        if (width % tempBlockLengthInPixel == 0 && width / tempBlockLengthInPixel >= 40
+            && height % tempBlockLengthInPixel == 0 && height % tempBlockLengthInPixel >= 20) {
+            blockLengthInPixel = tempBlockLengthInPixel;
+        }
+        tempBlockLengthInPixel++;
+    }
+
     blockLengthH = (2 / width) * blockLengthInPixel;
     blockLengthV = (2 / height) * blockLengthInPixel;
 
     blockCountH = width / blockLengthInPixel;
     blockCountV = height / blockLengthInPixel;
-    // vertices = new Array(Math.round(blockCountH * blockCountV * 4));
-    // indices = new Array(Math.round(vertices.length / 2));
+    console.log(blockCountH + ":" + blockCountV);
 }
 
 function areSameOccupiedBlockIDs(obj1, obj2) {
@@ -143,21 +154,21 @@ function visitBlock(currentBlock) {
 function pickANeighbor(currentBlock) {
     var neighborBlockID;
     var directionToTravel;
-    console.log("1|" + currentBlock.blockID.locH + ":" + currentBlock.blockID.locV);
+    //console.log("1|" + currentBlock.blockID.locH + ":" + currentBlock.blockID.locV);
     do {
         if (currentBlock.directionsToTravel.length < 1) {
-            console.log("4|Done");
+            //console.log("4|Done");
             return null;
         }
         directionToTravel = currentBlock.getDirectionToTravel();
         neighborBlockID = getNeighborBlockID(directionToTravel, currentBlock.blockID);
-        console.log("2.0|" + neighborBlockID.locH + ":" + neighborBlockID.locV);
-        console.log("2.1|" + (neighborBlockID.locH > 0 && neighborBlockID.locV > 0));
-        console.log("2.2|" + (neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH));
-        console.log("2.3|" + !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs));
-        console.log(occupiedBlockIDs)
+        // console.log("2.0|" + neighborBlockID.locH + ":" + neighborBlockID.locV);
+        // console.log("2.1|" + (neighborBlockID.locH > 0 && neighborBlockID.locV > 0));
+        // console.log("2.2|" + (neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH));
+        // console.log("2.3|" + !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs));
+        // console.log(occupiedBlockIDs)
     } while (!canVisitNeighbor(neighborBlockID));
-    console.log("3|Moving");
+    //console.log("3|Moving");
     var neighborBlock = null;
     var wallBlockIndices = breakWall(directionToTravel, currentBlock.blockIndices);
     var neighborBlockIndices = getNextBlockIndices(directionToTravel, wallBlockIndices);
