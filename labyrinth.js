@@ -9,6 +9,8 @@ var width, height;
 var occupiedBlockIDs = [];
 var blockCountH;
 var blockCountV;
+var paddingV;
+var paddingH;
 
 var Directions = Object.freeze({
     NORTH : 0,
@@ -73,7 +75,7 @@ function run(canvasName) {
 }
 
 function reconfigureAspect() {
-    var maxBlockLengthInPixel = 20;
+    var maxBlockLengthInPixel = 40;
     var minBlockLengthInPixel = 5;
     var tempBlockLengthInPixel = minBlockLengthInPixel;
     blockLengthInPixel = tempBlockLengthInPixel;
@@ -85,12 +87,30 @@ function reconfigureAspect() {
         tempBlockLengthInPixel++;
     }
 
-    blockLengthH = (2 / width) * blockLengthInPixel;
-    blockLengthV = (2 / height) * blockLengthInPixel;
+    var scaleH = 2 / width;
+    var scaleV = 2 / height;
+    blockLengthH = blockLengthInPixel * scaleH;
+    blockLengthV = blockLengthInPixel * scaleV;
 
-    blockCountH = width / blockLengthInPixel;
-    blockCountV = height / blockLengthInPixel;
-    console.log(blockCountH + ":" + blockCountV);
+    var factorH = width / blockLengthInPixel;
+    var factorV = height / blockLengthInPixel;
+
+    blockCountH = Math.floor(factorH);
+    blockCountV = Math.floor(factorV);
+
+    var extraBlockH = factorH % blockCountH;
+    var extraBlockV = factorV % blockCountV;
+
+    var extraBlockInPixelH = extraBlockH * blockLengthInPixel;
+    var extraBlockInPixelV = extraBlockV * blockLengthInPixel;
+
+    paddingH = extraBlockInPixelH * scaleH;
+    paddingV = extraBlockInPixelV * scaleV;
+
+    console.log("blockCountH:" + blockCountH + "|blockCountV:" + blockCountV);
+    console.log("width:" + width);
+    console.log("factorH:" + factorH + "|factorV:" + factorV);
+    console.log("paddingH:" + paddingH + "|paddingV:" + paddingV);
 }
 
 function areSameOccupiedBlockIDs(obj1, obj2) {
@@ -121,18 +141,18 @@ function start(gl) {
     var indexH = -1 - blockLengthH;
     var indexV = -1 + blockLengthV;
 
-    var nwIndex = registerVertices(indexH, indexV + blockLengthV);
-    var neIndex = registerVertices(indexH + blockLengthH, indexV + blockLengthV);
-    var seIndex = registerVertices(indexH + blockLengthH, indexV);
-    var swIndex = registerVertices(indexH, indexV);
+    // var nwIndex = registerVertices(indexH, indexV + blockLengthV);
+    var neIndex = registerVertices(indexH + blockLengthH + paddingH, indexV + blockLengthV + paddingV);
+    var seIndex = registerVertices(indexH + blockLengthH + paddingH, indexV) + paddingV;
+    // var swIndex = registerVertices(indexH, indexV);
 
     var directionToTravel = Directions.EAST;
-    var currentBlockIndices = new BlockIndices(nwIndex, neIndex, seIndex, swIndex);
+    var currentBlockIndices = new BlockIndices(null, neIndex, seIndex, null);
     var wallBlockIndices = breakWall(directionToTravel, currentBlockIndices);
 
     var neighborBlockIndices = getNextBlockIndices(directionToTravel, wallBlockIndices);
     var fromDirection = getDirectionWithRespectToNeighbor(directionToTravel);
-    var neighborBlockID = new BlockID(1,1);
+    var neighborBlockID = new BlockID(2,2);
     occupiedBlockIDs.push(neighborBlockID);
     var currentBlock = new Block(neighborBlockIndices, neighborBlockID, null, fromDirection);
     visitBlock(currentBlock);
@@ -140,35 +160,23 @@ function start(gl) {
 }
 
 function visitBlock(currentBlock) {
-    if (currentBlock == null) {
-        return null;
-    }
-    var neighborBlock = pickANeighbor(currentBlock);
-    if (neighborBlock != null) {
-        return visitBlock(neighborBlock);
+    var neighborBlock;
+    while ((neighborBlock = pickANeighbor(currentBlock)) != null) {
+        visitBlock(neighborBlock);
     }
     currentBlock.freeUpMem();
-    return visitBlock(currentBlock.parentBlock);
 }
 
 function pickANeighbor(currentBlock) {
     var neighborBlockID;
     var directionToTravel;
-    //console.log("1|" + currentBlock.blockID.locH + ":" + currentBlock.blockID.locV);
     do {
         if (currentBlock.directionsToTravel.length < 1) {
-            //console.log("4|Done");
             return null;
         }
         directionToTravel = currentBlock.getDirectionToTravel();
         neighborBlockID = getNeighborBlockID(directionToTravel, currentBlock.blockID);
-        // console.log("2.0|" + neighborBlockID.locH + ":" + neighborBlockID.locV);
-        // console.log("2.1|" + (neighborBlockID.locH > 0 && neighborBlockID.locV > 0));
-        // console.log("2.2|" + (neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH));
-        // console.log("2.3|" + !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs));
-        // console.log(occupiedBlockIDs)
     } while (!canVisitNeighbor(neighborBlockID));
-    //console.log("3|Moving");
     var neighborBlock = null;
     var wallBlockIndices = breakWall(directionToTravel, currentBlock.blockIndices);
     var neighborBlockIndices = getNextBlockIndices(directionToTravel, wallBlockIndices);
@@ -285,6 +293,9 @@ function getDirectionWithRespectToNeighbor(directionToTravel) {
 }
 
 function canVisitNeighbor(neighborBlockID) {
+    if (neighborBlockID.locH >= blockCountH) {
+        console.log("max:" + neighborBlockID.locH);
+    }
     return neighborBlockID.locH > 0 && neighborBlockID.locV > 0 &&
         neighborBlockID.locV < blockCountV && neighborBlockID.locH < blockCountH
         && !contains(occupiedBlockIDs, neighborBlockID, areSameOccupiedBlockIDs);
